@@ -2,6 +2,7 @@ package lid
 
 import (
 	"database/sql"
+	"time"
 )
 
 type Lid struct {
@@ -29,16 +30,11 @@ func (l *Lid) Get() int64 {
 
 // productId 生产id
 func (l *Lid) productId() {
-	err := l.reset()
-	if err != nil {
-		return
-	}
+	l.reset()
 	for {
 		if l.min >= l.max {
-			err := l.reset()
-			if err != nil {
-				return
-			}
+			l.reset()
+
 		}
 
 		l.min++
@@ -46,16 +42,16 @@ func (l *Lid) productId() {
 	}
 }
 
-// reset 在数据库获取id段时，最多重试5次
-func (l *Lid) reset() error {
-	var err error
-	for i := 0; i < 5; i++ {
-		err = l.getFromDB()
+// reset 不断尝试从数据库获取，直到成功
+func (l *Lid) reset() {
+	for {
+		err := l.getFromDB()
 		if err == nil {
-			return nil
+			return
 		}
+		time.Sleep(time.Second)
+		continue
 	}
-	return err
 }
 
 // getFromDB 从数据库获取id段
