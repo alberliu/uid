@@ -1,23 +1,3 @@
-# 高性能分布式自增id生成器lid
-先看下测试结果：
-
-```
-goos: darwin
-goarch: amd64
-pkg: goim/public/lib/lid
-BenchmarkLeafKey-4   	 2000000	      1081 ns/op
-PASS
-```
-
-步长设置为1000.缓冲池大小设为1000，每秒可以达到近百万次的生成量，其思想借鉴了[Leaf——美团点评分布式ID生成系统](https://tech.meituan.com/MT_Leaf.html)的Leaf-segment数据库双buffer优化方案，其实他的核心思想是，每次从数据库拿取一个号段，用完了，再去数据库拿，当用尽去数据库拿的时候，会有一小会的阻塞，对这一情况做了一些优化。
-
-刚开始实现的时候，和美团的方案一样，利用两个buffer，Leaf服务内部有两个号段缓存区segment。当前号段已下发10%时，如果下一个号段未更新，则另启一个更新线程去更新下一个号段。当前号段全部下发完后，如果下个号段准备好了则切换到下个号段为当前segment接着下发，循环往复。
-
-最后想了想，其实没必要这么复杂，用一个channal,一边起一个goroutine，先从数据库拿取一个号段，然后生成id放到channel里面，如果号段用尽，再从数据库里面取，如此往复，当channel里面满时，goroutine会阻塞。一边用的时候从里面拿就行。
-
-贴出代码：
-
-```go
 package uid
 
 import (
@@ -133,21 +113,3 @@ func (u *Uid) getFromDB() error {
 	u.max = maxId + step
 	return nil
 }
-```
-sql语句
-```sql
-CREATE TABLE `uid` (
-  `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT COMMENT '自增主键',
-  `business_id` varchar(128) COLLATE utf8mb4_bin DEFAULT NULL COMMENT '业务id',
-  `max_id` bigint(20) unsigned DEFAULT NULL COMMENT '最大id',
-  `step` int(10) unsigned DEFAULT NULL COMMENT '步长',
-  `description` varchar(255) COLLATE utf8mb4_bin DEFAULT NULL COMMENT '描述',
-  `create_time` datetime DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
-  `update_time` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
-  PRIMARY KEY (`id`),
-  UNIQUE KEY `uk_business_id` (`business_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin COMMENT='分布式自增主键';
-```
-
-
-
